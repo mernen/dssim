@@ -34,7 +34,7 @@ pub use val::Dssim as Val;
 pub use tolab::ToLABBitmap;
 
 trait Channable<T, I> {
-    fn img1_img2_blur<'a>(&self, modified: &mut Self, tmp: &mut [I]) -> Vec<T>;
+    fn img1_img2_blur<'a>(&self, modified: &Self, tmp: &mut [I]) -> Vec<T>;
 }
 
 struct DssimChan<T> {
@@ -120,9 +120,9 @@ impl DssimChan<f32> {
 }
 
 impl Channable<LAB, f32> for [DssimChan<f32>] {
-    fn img1_img2_blur(&self, modified: &mut Self, tmp32: &mut [f32]) -> Vec<LAB> {
+    fn img1_img2_blur(&self, modified: &Self, tmp32: &mut [f32]) -> Vec<LAB> {
 
-        let blurred:Vec<_> = self.iter().zip(modified.iter_mut()).map(|(o,m)|{
+        let blurred:Vec<_> = self.iter().zip(modified.iter()).map(|(o,m)|{
             o.img1_img2_blur(m, tmp32)
         }).collect();
 
@@ -133,8 +133,8 @@ impl Channable<LAB, f32> for [DssimChan<f32>] {
 }
 
 impl Channable<f32, f32> for DssimChan<f32> {
-    fn img1_img2_blur(&self, modified: &mut Self, tmp32: &mut [f32]) -> Vec<f32> {
-        let modified_img = modified.img.take().unwrap();
+    fn img1_img2_blur(&self, modified: &Self, tmp32: &mut [f32]) -> Vec<f32> {
+        let modified_img = modified.img.as_ref().unwrap();
         let width = modified_img.width();
         let height = modified_img.height();
 
@@ -251,10 +251,10 @@ impl Dssim {
     /// The `SsimMap`s are returned only if you've enabled them first.
     ///
     /// `Val` is a fancy wrapper for `f64`
-    pub fn compare(&self, original_image: &DssimImage<f32>, modified_image: DssimImage<f32>) -> (Val, Vec<SsimMap>) {
+    pub fn compare(&self, original_image: &DssimImage<f32>, modified_image: &DssimImage<f32>) -> (Val, Vec<SsimMap>) {
         let res: Vec<_> = self.scale_weights.par_iter().cloned().zip(
-            modified_image.scale.into_par_iter().zip(original_image.scale.par_iter())
-        ).enumerate().map(|(n, (weight, (mut modified_image_scale, original_image_scale)))| {
+            modified_image.scale.par_iter().zip(original_image.scale.par_iter())
+        ).enumerate().map(|(n, (weight, (modified_image_scale, original_image_scale)))| {
             let scale_width = original_image_scale.chan[0].width;
             let scale_height = original_image_scale.chan[0].height;
             let mut tmp = Vec::with_capacity(scale_width * scale_height);
@@ -265,14 +265,14 @@ impl Dssim {
                     let (original_lab, (img1_img2_blur, modified_lab)) = rayon::join(
                     || Self::lab_chan(original_image_scale),
                     || {
-                        let img1_img2_blur = original_image_scale.chan.img1_img2_blur(&mut modified_image_scale.chan, &mut tmp[0 .. scale_width*scale_height]);
+                        let img1_img2_blur = original_image_scale.chan.img1_img2_blur(&modified_image_scale.chan, &mut tmp[0 .. scale_width*scale_height]);
                         (img1_img2_blur, Self::lab_chan(&modified_image_scale))
                     });
 
                     Self::compare_scale(&original_lab, &modified_lab, &img1_img2_blur)
                 },
                 1 => {
-                    let img1_img2_blur = original_image_scale.chan[0].img1_img2_blur(&mut modified_image_scale.chan[0], &mut tmp[0 .. scale_width*scale_height]);
+                    let img1_img2_blur = original_image_scale.chan[0].img1_img2_blur(&modified_image_scale.chan[0], &mut tmp[0 .. scale_width*scale_height]);
                     Self::compare_scale(&original_image_scale.chan[0], &modified_image_scale.chan[0], &img1_img2_blur)
                 },
                 _ => panic!(),
@@ -402,13 +402,13 @@ fn png_compare() {
     let img1 = d.create_image(&Img::new(buf1, file1.width, file1.height)).unwrap();
     let img2 = d.create_image(&Img::new(buf2, file2.width, file2.height)).unwrap();
 
-    let (res, _) = d.compare(&img1, img2);
+    let (res, _) = d.compare(&img1, &img2);
     assert!((0.003297 - res).abs() < 0.0001, "res is {}", res);
     assert!(res < 0.0033);
     assert!(0.0032 < res);
 
     let img1b = d.create_image(&Img::new(buf1, file1.width, file1.height)).unwrap();
-    let (res, _) = d.compare(&img1, img1b);
+    let (res, _) = d.compare(&img1, &img1b);
 
     assert!(0.000000000000001 > res);
     assert!(res < 0.000000000000001);
@@ -416,12 +416,12 @@ fn png_compare() {
 
     let sub_img1 = d.create_image(&Img::new(buf1, file1.width, file1.height).sub_image(2,3,44,33)).unwrap();
     let sub_img2 = d.create_image(&Img::new(buf2, file2.width, file2.height).sub_image(17,9,44,33)).unwrap();
-    let (res, _) = d.compare(&sub_img1, sub_img2);
+    let (res, _) = d.compare(&sub_img1, &sub_img2);
     assert!(res > 0.1);
 
     let sub_img1 = d.create_image(&Img::new(buf1, file1.width, file1.height).sub_image(22,8,61,40)).unwrap();
     let sub_img2 = d.create_image(&Img::new(buf2, file2.width, file2.height).sub_image(22,8,61,40)).unwrap();
-    let (res, _) = d.compare(&sub_img1, sub_img2);
+    let (res, _) = d.compare(&sub_img1, &sub_img2);
     assert!(res < 0.01);
 }
 
@@ -443,6 +443,6 @@ fn poison() {
     let d = new();
     let sub_img1 = d.create_image(&img.as_ref()).unwrap();
     let sub_img2 = d.create_image(&img.as_ref()).unwrap();
-    let (res, _) = d.compare(&sub_img1, sub_img2);
+    let (res, _) = d.compare(&sub_img1, &sub_img2);
     assert!(res < 0.000001);
 }

@@ -112,7 +112,7 @@ fn main() {
             attr.set_save_ssim_maps(8);
         }
 
-        let (dssim, ssim_maps) = attr.compare(&original, modified);
+        let (dssim, ssim_maps) = attr.compare(&original, &modified);
 
         println!("{:.6}\t{}", dssim, file2.display());
 
@@ -147,10 +147,10 @@ fn image_gray() {
     let g2 = attr.create_image(&load("tests/gray1-pal.png").unwrap()).unwrap();
     let g3 = attr.create_image(&load("tests/gray1-gray.png").unwrap()).unwrap();
 
-    let (diff, _) = attr.compare(&g1, g2);
+    let (diff, _) = attr.compare(&g1, &g2);
     assert!(diff < 0.00001);
 
-    let (diff, _) = attr.compare(&g1, g3);
+    let (diff, _) = attr.compare(&g1, &g3);
     assert!(diff < 0.00001);
 }
 
